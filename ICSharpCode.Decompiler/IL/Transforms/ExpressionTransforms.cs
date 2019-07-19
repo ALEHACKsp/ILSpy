@@ -64,8 +64,13 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 
 		protected internal override void VisitBlock(Block block)
 		{
-			// Don't visit child blocks; since this is a block transform
-			// we know those were already handled previously.
+			if (block.Kind == BlockKind.ControlFlow) {
+				// Don't visit child control flow blocks;
+				// since this is a block transform
+				// we know those were already handled previously.
+				return;
+			}
+			base.VisitBlock(block);
 		}
 
 		protected internal override void VisitComp(Comp inst)
@@ -271,6 +276,7 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 			}
 			Block block;
 			if (TransformSpanTCtorContainingStackAlloc(inst, out ILInstruction locallocSpan)) {
+				context.Step("new Span<T>(stackalloc) -> stackalloc Span<T>", inst);
 				inst.ReplaceWith(locallocSpan);
 				block = null;
 				ILInstruction stmt = locallocSpan;
@@ -281,7 +287,9 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 					}
 					stmt = stmt.Parent;
 				}
-				//ILInlining.InlineIfPossible(block, stmt.ChildIndex - 1, context);
+				// Special case to eliminate extra store
+				if (stmt.GetNextSibling() is StLoc storeStmt && storeStmt.Value is LdLoc)
+					ILInlining.InlineIfPossible(block, stmt.ChildIndex, context);
 				return;
 			}
 			if (TransformArrayInitializers.TransformSpanTArrayInitialization(inst, context, out block)) {

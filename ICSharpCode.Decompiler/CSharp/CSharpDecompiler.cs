@@ -156,6 +156,7 @@ namespace ICSharpCode.Decompiler.CSharp
 				},
 				new ProxyCallReplacer(),
 				new DelegateConstruction(),
+				new TransformDisplayClassUsage(),
 				new HighLevelLoopTransform(),
 				new ReduceNestingTransform(),
 				new IntroduceDynamicTypeOnLocals(),
@@ -1373,7 +1374,7 @@ namespace ICSharpCode.Decompiler.CSharp
 				}
 				var fieldDefinition = metadata.GetFieldDefinition((FieldDefinitionHandle)field.MetadataToken);
 				if (fieldDefinition.HasFlag(System.Reflection.FieldAttributes.HasFieldRVA)) {
-					// Field data as specified in II.16.3.2 of ECMA-335 6th edition:
+					// Field data as specified in II.16.3.1 of ECMA-335 6th edition:
 					// .data I_X = int32(123)
 					// .field public static int32 _x at I_X
 					string message;
@@ -1401,27 +1402,6 @@ namespace ICSharpCode.Decompiler.CSharp
 					type = trr;
 					elementCount = length;
 					return true;
-				}
-			}
-			return false;
-		}
-
-		internal static bool IsFixedField(MetadataReader metadata, FieldDefinitionHandle handle, out IType type, out int elementCount)
-		{
-			type = null;
-			elementCount = 0;
-			var field = metadata.GetFieldDefinition(handle);
-			foreach (var h in field.GetCustomAttributes()) {
-				var customAttribute = metadata.GetCustomAttribute(h);
-				if (customAttribute.IsKnownAttribute(metadata, KnownAttribute.FixedBuffer)) {
-					var value = customAttribute.DecodeValue(MetadataExtensions.minimalCorlibTypeProvider);
-					if (value.FixedArguments.Length == 2) {
-						if (value.FixedArguments[0].Value is IType trr && value.FixedArguments[1].Value is int length) {
-							type = trr;
-							elementCount = length;
-							return true;
-						}
-					}
 				}
 			}
 			return false;
