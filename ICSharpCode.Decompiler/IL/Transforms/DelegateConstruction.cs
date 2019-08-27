@@ -24,7 +24,10 @@ using ICSharpCode.Decompiler.TypeSystem;
 
 namespace ICSharpCode.Decompiler.IL.Transforms
 {
-	public class DelegateConstruction : IILTransform
+	/// <summary>
+	/// 
+	/// </summary>
+	class DelegateConstruction : IILTransform
 	{
 		ILTransformContext context;
 		ITypeResolveContext decompilationContext;
@@ -59,11 +62,13 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 
 		internal static bool IsDelegateConstruction(NewObj inst, bool allowTransformed = false)
 		{
-			if (inst == null || inst.Arguments.Count != 2 || inst.Method.DeclaringType.Kind != TypeKind.Delegate)
+			if (inst == null || inst.Arguments.Count != 2)
 				return false;
 			var opCode = inst.Arguments[1].OpCode;
-			
-			return opCode == OpCode.LdFtn || opCode == OpCode.LdVirtFtn || (allowTransformed && opCode == OpCode.ILFunction);
+			if (!(opCode == OpCode.LdFtn || opCode == OpCode.LdVirtFtn || (allowTransformed && opCode == OpCode.ILFunction)))
+				return false;
+			var typeKind = inst.Method.DeclaringType.Kind;
+			return typeKind == TypeKind.Delegate || typeKind == TypeKind.Unknown;
 		}
 		
 		static bool IsAnonymousMethod(ITypeDefinition decompiledTypeDefinition, IMethod method)
@@ -121,11 +126,11 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 			var targetMethod = ((IInstructionWithMethodOperand)value.Arguments[1]).Method;
 			if (!IsAnonymousMethod(decompilationContext.CurrentTypeDefinition, targetMethod))
 				return null;
-			if (LocalFunctionDecompiler.IsLocalFunctionMethod(targetMethod.ParentModule.PEFile, (MethodDefinitionHandle)targetMethod.MetadataToken))
-				return null;
-			target = value.Arguments[0];
 			if (targetMethod.MetadataToken.IsNil)
 				return null;
+			if (LocalFunctionDecompiler.IsLocalFunctionMethod(targetMethod, context))
+				return null;
+			target = value.Arguments[0];
 			var methodDefinition = context.PEFile.Metadata.GetMethodDefinition((MethodDefinitionHandle)targetMethod.MetadataToken);
 			if (!methodDefinition.HasBody())
 				return null;
@@ -134,12 +139,12 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 				return null;
 			var ilReader = context.CreateILReader();
 			var body = context.PEFile.Reader.GetMethodBody(methodDefinition.RelativeVirtualAddress);
-			var function = ilReader.ReadIL((MethodDefinitionHandle)targetMethod.MetadataToken, body, genericContext.Value, context.CancellationToken);
+			var function = ilReader.ReadIL((MethodDefinitionHandle)targetMethod.MetadataToken, body, genericContext.Value, ILFunctionKind.Delegate, context.CancellationToken);
 			function.DelegateType = value.Method.DeclaringType;
-			function.CheckInvariant(ILPhase.Normal);
 			// Embed the lambda into the parent function's ILAst, so that "Show steps" can show
 			// how the lambda body is being transformed.
 			value.ReplaceWith(function);
+			function.CheckInvariant(ILPhase.Normal);
 
 			var contextPrefix = targetMethod.Name;
 			foreach (ILVariable v in function.Variables.Where(v => v.Kind != VariableKind.Parameter)) {
@@ -169,7 +174,7 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 		/// Replaces loads of 'this' with the target expression.
 		/// Async delegates use: ldobj(ldloca this).
 		/// </summary>
-		class ReplaceDelegateTargetVisitor : ILVisitor
+		internal class ReplaceDelegateTargetVisitor : ILVisitor
 		{
 			readonly ILVariable thisVariable;
 			readonly ILInstruction target;

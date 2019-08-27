@@ -710,7 +710,7 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 					return (newInst, bits);
 				}
 			} else if (inst is Comp comp && !comp.IsLifted && comp.Kind == ComparisonKind.Equality
-				&& MatchGetValueOrDefault(comp.Left, out ILVariable v)
+				&& MatchGetValueOrDefault(comp.Left, out ILVariable v) && nullableVars.Contains(v)
 				&& NullableType.GetUnderlyingType(v.Type).IsKnownType(KnownTypeCode.Boolean)
 				&& comp.Right.MatchLdcI4(0)
 			) {
@@ -833,7 +833,7 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 		/// <summary>
 		/// Matches 'logic.not(call get_HasValue(ldloca v))'
 		/// </summary>
-		static bool MatchNegatedHasValueCall(ILInstruction inst, ILVariable v)
+		internal static bool MatchNegatedHasValueCall(ILInstruction inst, ILVariable v)
 		{
 			return inst.MatchLogicNot(out var arg) && MatchHasValueCall(arg, v);
 		}

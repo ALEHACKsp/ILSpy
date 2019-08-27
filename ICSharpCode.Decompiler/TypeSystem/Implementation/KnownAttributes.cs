@@ -40,6 +40,7 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		Dynamic,
 		TupleElementNames,
 		Nullable,
+		NullableContext,
 		Conditional,
 		Obsolete,
 		IsReadOnly,
@@ -62,6 +63,7 @@ namespace ICSharpCode.Decompiler.TypeSystem
 		IsByRefLike,
 		IteratorStateMachine,
 		AsyncStateMachine,
+		AsyncMethodBuilder,
 
 		// Field attributes:
 		FieldOffset,
@@ -107,6 +109,7 @@ namespace ICSharpCode.Decompiler.TypeSystem
 			new TopLevelTypeName("System.Runtime.CompilerServices", nameof(DynamicAttribute)),
 			new TopLevelTypeName("System.Runtime.CompilerServices", nameof(TupleElementNamesAttribute)),
 			new TopLevelTypeName("System.Runtime.CompilerServices", "NullableAttribute"),
+			new TopLevelTypeName("System.Runtime.CompilerServices", "NullableContextAttribute"),
 			new TopLevelTypeName("System.Diagnostics", nameof(ConditionalAttribute)),
 			new TopLevelTypeName("System", nameof(ObsoleteAttribute)),
 			new TopLevelTypeName("System.Runtime.CompilerServices", "IsReadOnlyAttribute"),
@@ -127,6 +130,7 @@ namespace ICSharpCode.Decompiler.TypeSystem
 			new TopLevelTypeName("System.Runtime.CompilerServices", "IsByRefLikeAttribute"),
 			new TopLevelTypeName("System.Runtime.CompilerServices", nameof(IteratorStateMachineAttribute)),
 			new TopLevelTypeName("System.Runtime.CompilerServices", nameof(AsyncStateMachineAttribute)),
+			new TopLevelTypeName("System.Runtime.CompilerServices", "AsyncMethodBuilderAttribute"),
 			// Field attributes:
 			new TopLevelTypeName("System.Runtime.InteropServices", nameof(FieldOffsetAttribute)),
 			new TopLevelTypeName("System", nameof(NonSerializedAttribute)),

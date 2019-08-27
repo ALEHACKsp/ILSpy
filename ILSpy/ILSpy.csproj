@@ -48,7 +48,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="AvalonEdit" Version="5.0.4" />
+    <PackageReference Include="AvalonEdit" Version="6.0.0-preview1" />
     <PackageReference Include="Microsoft.DiaSymReader.Converter.Xml" Version="1.1.0-beta1-63314-01" />
     <PackageReference Include="Microsoft.VisualStudio.Composition" Version="15.5.23" />
     <PackageReference Include="Mono.Cecil" Version="0.10.3" />
@@ -140,6 +140,7 @@
     <Compile Include="GacInterop.cs" />
     <Compile Include="GuessFileType.cs" />
     <Compile Include="ContextMenuEntry.cs" />
+    <Compile Include="Languages\CSharpBracketSearcher.cs" />
     <Compile Include="Languages\CSharpILMixedLanguage.cs" />
     <Compile Include="Languages\CSharpLanguage.cs" />
     <Compile Include="Languages\CSharpLexer.cs" />
@@ -204,9 +205,12 @@
     </Compile>
     <Compile Include="Commands\SimpleCommand.cs" />
     <Compile Include="Search\AbstractSearchStrategy.cs" />
+    <Compile Include="SolutionWriter.cs" />
     <Compile Include="TaskHelper.cs" />
+    <Compile Include="TextView\BracketHighlightRenderer.cs" />
     <Compile Include="TextView\EditorCommands.cs" />
     <Compile Include="TextView\FoldingCommands.cs" />
+    <Compile Include="Commands\SaveCodeContextMenuEntry.cs" />
     <Compile Include="TextView\XmlDocRenderer.cs" />
     <Compile Include="Analyzers\AnalyzeCommand.cs" />
     <Compile Include="Analyzers\Builtin\FieldAccessAnalyzer.cs" />
@@ -263,9 +267,7 @@
     <Resource Include="Images\Breakpoint.png" />
     <Resource Include="Images\CurrentLine.png" />
     <Resource Include="Images\DisabledBreakpoint.png" />
-    <None Include="app.config">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
+    <None Include="app.config" />
     <None Include="app.manifest" />
     <None Include="Images\ResourceXsl.png" />
     <None Include="Properties\app.config.template" />

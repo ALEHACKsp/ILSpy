@@ -28,6 +28,11 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 	/// <summary>
 	/// Constructs compound assignments and inline assignments.
 	/// </summary>
+	/// <remarks>
+	/// This is a statement transform;
+	/// but some portions are executed as an expression transform instead
+	/// (with HandleCompoundAssign() as entry point)
+	/// </remarks>
 	public class TransformAssignment : IStatementTransform
 	{
 		StatementTransformContext context;
@@ -294,6 +299,10 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 			}
 			ILInstruction newInst;
 			if (UnwrapSmallIntegerConv(setterValue, out var smallIntConv) is BinaryNumericInstruction binary) {
+				if (compoundStore is StLoc) {
+					// transform local variables only for user-defined operators
+					return false;
+				}
 				if (!IsMatchingCompoundLoad(binary.Left, compoundStore, out var target, out var targetKind, out var finalizeMatch, forbiddenVariable: storeInSetter?.Variable))
 					return false;
 				if (!ValidateCompoundAssign(binary, smallIntConv, targetType))
@@ -335,6 +344,10 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 				newInst = new DynamicCompoundAssign(dynamicBinaryOp.Operation, dynamicBinaryOp.BinderFlags, target, dynamicBinaryOp.LeftArgumentInfo, dynamicBinaryOp.Right, dynamicBinaryOp.RightArgumentInfo, targetKind);
 			} else if (setterValue is Call concatCall && UserDefinedCompoundAssign.IsStringConcat(concatCall.Method)) {
 				// setterValue is a string.Concat() invocation
+				if (compoundStore is StLoc) {
+					// transform local variables only for user-defined operators
+					return false;
+				}
 				if (concatCall.Arguments.Count != 2)
 					return false; // for now we only support binary compound assignments
 				if (!targetType.IsKnownType(KnownTypeCode.String))
@@ -534,10 +547,14 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 		/// Some transforms effectively move a store around,
 		/// which is only valid if the variable stored to does not occur in the compound load/store.
 		/// </param>
+		/// <param name="previousInstruction">
+		/// Instruction preceding the load.
+		/// </param>
 		static bool IsMatchingCompoundLoad(ILInstruction load, ILInstruction store,
 			out ILInstruction target, out CompoundTargetKind targetKind,
 			out Action<ILTransformContext> finalizeMatch,
-			ILVariable forbiddenVariable = null)
+			ILVariable forbiddenVariable = null,
+			ILInstruction previousInstruction = null)
 		{
 			target = null;
 			targetKind = 0;
@@ -550,7 +567,16 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 					return false;
 				target = ldobj.Target;
 				targetKind = CompoundTargetKind.Address;
-				return ldobj.Target.Match(stobj.Target).Success;
+				if (ldobj.Target.Match(stobj.Target).Success) {
+					return true;
+				} else if (IsDuplicatedAddressComputation(stobj.Target, ldobj.Target)) {
+					// Use S_0 as target, so that S_0 can later be eliminated by inlining.
+					// (we can't eliminate previousInstruction right now, because it's before the transform's starting instruction)
+					target = stobj.Target;
+					return true;
+				} else {
+					return false;
+				}
 			} else if (MatchingGetterAndSetterCalls(load as CallInstruction, store as CallInstruction, out finalizeMatch)) {
 				if (forbiddenVariable != null && forbiddenVariable.IsUsedWithin(load))
 					return false;
@@ -566,6 +592,27 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 				return true;
 			} else {
 				return false;
+			}
+
+			bool IsDuplicatedAddressComputation(ILInstruction storeTarget, ILInstruction loadTarget)
+			{
+				// Sometimes roslyn duplicates the address calculation:
+				// stloc S_0(ldloc refParam)
+				// stloc V_0(ldobj System.Int32(ldloc refParam))
+				// stobj System.Int32(ldloc S_0, binary.add.i4(ldloc V_0, ldc.i4 1))
+				while (storeTarget is LdFlda storeLdFlda && loadTarget is LdFlda loadLdFlda) {
+					if (!storeLdFlda.Field.Equals(loadLdFlda.Field))
+						return false;
+					storeTarget = storeLdFlda.Target;
+					loadTarget = loadLdFlda.Target;
+				}
+				if (!storeTarget.MatchLdLoc(out var s))
+					return false;
+				if (!(s.Kind == VariableKind.StackSlot && s.IsSingleDefinition && s != forbiddenVariable))
+					return false;
+				if (s.StoreInstructions.SingleOrDefault() != previousInstruction)
+					return false;
+				return previousInstruction is StLoc addressStore && addressStore.Value.Match(loadTarget).Success;
 			}
 		}
 
@@ -664,8 +711,11 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 				// 'stloc tmp' is implicitly truncating the value
 				return false;
 			}
-			if (!IsMatchingCompoundLoad(inst.Value, store, out var target, out var targetKind, out var finalizeMatch, forbiddenVariable: inst.Variable))
+			if (!IsMatchingCompoundLoad(inst.Value, store, out var target, out var targetKind, out var finalizeMatch,
+				forbiddenVariable: inst.Variable,
+				previousInstruction: block.Instructions.ElementAtOrDefault(i - 1))) {
 				return false;
+			}
 			if (UnwrapSmallIntegerConv(value, out var conv) is BinaryNumericInstruction binary) {
 				if (!binary.Left.MatchLdLoc(tmpVar) || !binary.Right.MatchLdcI(1))
 					return false;

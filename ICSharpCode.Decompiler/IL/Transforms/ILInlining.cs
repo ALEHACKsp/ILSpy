@@ -226,7 +226,8 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 				if (loadInst.OpCode == OpCode.LdLoca) {
 					// it was an ldloca instruction, so we need to use the pseudo-opcode 'addressof'
 					// to preserve the semantics of the compiler-generated temporary
-					loadInst.ReplaceWith(new AddressOf(inlinedExpression));
+					Debug.Assert(((LdLoca)loadInst).Variable == v);
+					loadInst.ReplaceWith(new AddressOf(inlinedExpression, v.Type));
 				} else {
 					loadInst.ReplaceWith(inlinedExpression);
 				}
@@ -272,10 +273,14 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 				return false;
 			if (ldloca.Variable.Type.IsReferenceType ?? false)
 				return false;
-			switch (ldloca.Parent.OpCode) {
+			ILInstruction inst = ldloca;
+			while (inst.Parent is LdFlda ldflda) {
+				inst = ldflda;
+			}
+			switch (inst.Parent.OpCode) {
 				case OpCode.Call:
 				case OpCode.CallVirt:
-					var method = ((CallInstruction)ldloca.Parent).Method;
+					var method = ((CallInstruction)inst.Parent).Method;
 					if (method.IsAccessor && method.AccessorKind != MethodSemanticsAttributes.Getter) {
 						// C# doesn't allow calling setters on temporary structs
 						return false;
@@ -283,6 +288,8 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 					return !method.IsStatic;
 				case OpCode.Await:
 					return true;
+				case OpCode.NullableUnwrap:
+					return ((NullableUnwrap)inst.Parent).RefInput;
 				default:
 					return false;
 			}
@@ -344,13 +351,17 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 		{
 			switch (addr) {
 				case LdFlda ldflda:
-					return ldflda.Field.IsReadOnly;
+					return ldflda.Field.IsReadOnly
+						|| (ldflda.Field.DeclaringType.Kind == TypeKind.Struct && IsReadonlyReference(ldflda.Target));
 				case LdsFlda ldsflda:
 					return ldsflda.Field.IsReadOnly;
 				case LdLoc ldloc:
 					return IsReadonlyRefLocal(ldloc.Variable);
 				case Call call:
 					return call.Method.ReturnTypeIsRefReadOnly;
+				case AddressOf _:
+					// C# doesn't allow mutation of value-type temporaries
+					return true;
 				default:
 					return false;
 			}
@@ -402,7 +413,13 @@ namespace ICSharpCode.Decompiler.IL.Transforms
 					}
 					break;
 			}
-			
+			if (inlinedExpression.ResultType == StackType.Ref) {
+				// VB likes to use ref locals for compound assignment
+				// (the C# compiler uses ref stack slots instead).
+				// We want to avoid unnecessary ref locals, so we'll always inline them if possible.
+				return true;
+			}
+
 			var parent = loadInst.Parent;
 			if (NullableLiftingTransform.MatchNullableCtor(parent, out _, out _)) {
 				// inline into nullable ctor call in lifted operator
