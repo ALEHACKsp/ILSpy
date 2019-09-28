@@ -59,10 +59,18 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 
 			// Reduce "String.Concat(a, b)" to "a + b"
 			if (IsStringConcat(method) && CheckArgumentsForStringConcat(arguments)) {
-				invocationExpression.Arguments.Clear(); // detach arguments from invocationExpression
-				Expression expr = arguments[0];
+				bool isInExpressionTree = invocationExpression.Ancestors.OfType<LambdaExpression>().Any(
+					lambda => lambda.Annotation<IL.ILFunction>()?.Kind == IL.ILFunctionKind.ExpressionTree);
+				Expression expr = arguments[0].Detach();
+				if (!isInExpressionTree) {
+					expr = RemoveRedundantToStringInConcat(expr, method, isLastArgument: false).Detach();
+				}
 				for (int i = 1; i < arguments.Length; i++) {
-					expr = new BinaryOperatorExpression(expr, BinaryOperatorType.Add, arguments[i].UnwrapInDirectionExpression());
+					var arg = arguments[i].Detach();
+					if (!isInExpressionTree) {
+						arg = RemoveRedundantToStringInConcat(arg, method, isLastArgument: i == arguments.Length - 1).Detach();
+					}
+					expr = new BinaryOperatorExpression(expr, BinaryOperatorType.Add, arg);
 				}
 				expr.CopyAnnotationsFrom(invocationExpression);
 				invocationExpression.ReplaceWith(expr);
@@ -165,7 +173,7 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 
 			return;
 		}
-
+		
 		bool IsInstantiableTypeParameter(IType type)
 		{
 			return type is ITypeParameter tp && tp.HasDefaultConstructorConstraint;
@@ -221,6 +229,64 @@ namespace ICSharpCode.Decompiler.CSharp.Transforms
 			return member is IMethod method
 				&& method.Name == "Concat"
 				&& method.DeclaringType.IsKnownType(KnownTypeCode.String);
+		}
+
+		static readonly Pattern ToStringCallPattern = new Choice {
+			// target.ToString()
+			new InvocationExpression(new MemberReferenceExpression(new AnyNode("target"), "ToString")).WithName("call"),
+			// target?.ToString()
+			new UnaryOperatorExpression(
+				UnaryOperatorType.NullConditionalRewrap,
+				new InvocationExpression(
+					new MemberReferenceExpression(
+						new UnaryOperatorExpression(UnaryOperatorType.NullConditional, new AnyNode("target")),
+						"ToString")
+				).WithName("call")
+			).WithName("nullConditional")
+		};
+
+		internal static Expression RemoveRedundantToStringInConcat(Expression expr, IMethod concatMethod, bool isLastArgument)
+		{
+			var m = ToStringCallPattern.Match(expr);
+			if (!m.Success)
+				return expr;
+
+			if (!concatMethod.Parameters.All(IsStringParameter)) {
+				// If we're using a string.Concat() overload involving object parameters,
+				// string.Concat() itself already calls ToString() so the C# compiler shouldn't
+				// generate additional ToString() calls in this case.
+				return expr;
+			}
+			var toStringMethod = m.Get<Expression>("call").Single().GetSymbol() as IMethod;
+			var target = m.Get<Expression>("target").Single();
+			var type = target.GetResolveResult().Type;
+			if (!(isLastArgument || ToStringIsKnownEffectFree(type))) {
+				// ToString() order of evaluation matters, see CheckArgumentsForStringConcat().
+				return expr;
+			}
+			if (type.IsReferenceType != false && !m.Has("nullConditional")) {
+				// ToString() might throw NullReferenceException, but the builtin operator+ doesn't.
+				return expr;
+			}
+			if (!ToStringIsKnownEffectFree(type) && toStringMethod != null && IL.Transforms.ILInlining.MethodRequiresCopyForReadonlyLValue(toStringMethod)) {
+				// ToString() on a struct may mutate the struct.
+				// For operator+ the C# compiler creates a temporary copy before implicitly calling ToString(),
+				// whereas an explicit ToString() call would mutate the original lvalue.
+				// So we can't remove the compiler-generated ToString() call in cases where this might make a difference.
+				return expr;
+			}
+
+			// All checks succeeded, we can eliminate the ToString() call.
+			// The C# compiler will generate an equivalent call if the code is recompiled.
+			return target;
+
+			bool IsStringParameter(IParameter p)
+			{
+				IType ty = p.Type;
+				if (p.IsParams && ty.Kind == TypeKind.Array)
+					ty = ((ArrayType)ty).ElementType;
+				return ty.IsKnownType(KnownTypeCode.String);
+			}
 		}
 
 		static bool ToStringIsKnownEffectFree(IType type)

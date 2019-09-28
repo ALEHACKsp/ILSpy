@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2013 AlphaSierraPapa for the SharpDevelop Team
+﻿// Copyright (c) 2018 Siegfried Pammer
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this
 // software and associated documentation files (the "Software"), to deal in the Software
@@ -16,32 +16,42 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Text;
+using ICSharpCode.Decompiler.IL.Transforms;
+using ICSharpCode.Decompiler.TypeSystem;
 
-namespace ICSharpCode.ILSpy.Analyzers
+namespace ICSharpCode.Decompiler.IL
 {
-	[ExportContextMenuEntry(Header = "Remove", Icon = "images/Delete", Category = "Analyze", Order = 200)]
-	internal sealed class RemoveAnalyzeContextMenuEntry : IContextMenuEntry
+	class IntroduceRefReadOnlyModifierOnLocals : IILTransform
 	{
-		public bool IsVisible(TextViewContext context)
+		public void Run(ILFunction function, ILTransformContext context)
 		{
-			if (context.TreeView is AnalyzerTreeView && context.SelectedTreeNodes != null && context.SelectedTreeNodes.All(n => n.Parent.IsRoot))
-				return true;
-			return false;
-		}
-
-		public bool IsEnabled(TextViewContext context)
-		{
-			return true;
-		}
-
-		public void Execute(TextViewContext context)
-		{
-			if (context.SelectedTreeNodes != null) {
-				foreach (var node in context.SelectedTreeNodes) {
-					node.Parent.Children.Remove(node);
+			foreach (var variable in function.Variables) {
+				if (variable.Type.Kind != TypeKind.ByReference || variable.Kind == VariableKind.Parameter)
+					continue;
+				// ref readonly
+				if (IsUsedAsRefReadonly(variable)) {
+					variable.IsRefReadOnly = true;
+					continue;
 				}
 			}
+		}
+
+		/// <summary>
+		/// Infer ref readonly type from usage:
+		/// An ILVariable should be marked as readonly,
+		/// if it's a "by-ref-like" type and the initialized value is known to be readonly.
+		/// </summary>
+		bool IsUsedAsRefReadonly(ILVariable variable)
+		{
+			foreach (var store in variable.StoreInstructions.OfType<StLoc>()) {
+				if (ILInlining.IsReadonlyReference(store.Value))
+					return true;
+			}
+			return false;
 		}
 	}
 }
