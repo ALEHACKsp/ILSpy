@@ -139,6 +139,7 @@
       <DependentUpon>DebugSteps.xaml</DependentUpon>
     </Compile>
     <Compile Include="Docking\DockingHelper.cs" />
+    <Compile Include="Docking\DockLayoutSettings.cs" />
     <Compile Include="ILSpyTraceListener.cs" />
     <Compile Include="DecompilationOptions.cs" />
     <Compile Include="ExtensionMethods.cs" />
@@ -172,6 +173,7 @@
       <DependentUpon>Resources.resx</DependentUpon>
     </Compile>
     <Compile Include="Search\AbstractEntitySearchStrategy.cs" />
+    <Compile Include="Search\NamespaceSearchStrategy.cs" />
     <Compile Include="Search\AssemblySearchStrategy.cs" />
     <Compile Include="Search\LiteralSearchStrategy.cs" />
     <Compile Include="LoadedAssembly.cs" />
